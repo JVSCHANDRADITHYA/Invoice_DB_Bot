@@ -1,0 +1,8 @@
+# sensitive files
+*.csv
+*.xlsx
+*.db
+
+# ERP files (do not push)
+sample_erp.db
+data.csv
