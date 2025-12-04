@@ -1,7 +1,7 @@
 import requests
 
 class LMstudioAPI:
-    def __init__(self, base_url='http://localhost:8080'):
+    def __init__(self, base_url='http://localhost:1234'):
         self.base_url = base_url
 
     def list_models(self):

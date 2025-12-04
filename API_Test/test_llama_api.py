@@ -3,7 +3,7 @@ import requests
 url = "http://localhost:8000/generate"
 
 payload = {
-    "prompt": "Explain transformers in 3 lines.",
+    "prompt": "YOU ARE A SQL EXPERT",
     "max_tokens": 150
 }
 
