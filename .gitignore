@@ -2,6 +2,7 @@
 *.csv
 *.xlsx
 *.db
+*.duckdb
 
 # ERP files (do not push)
 sample_erp.db
