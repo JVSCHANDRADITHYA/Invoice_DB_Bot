@@ -5,6 +5,7 @@
 *.duckdb
 *.docx
 *.json
+*.pyc
 
 
 # ERP files (do not push)
