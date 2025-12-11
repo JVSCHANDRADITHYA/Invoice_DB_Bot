@@ -174,3 +174,149 @@ class OllamaHandler:
                     break
 
         return " ".join(final_lines).strip()
+    
+    def interpret_response(self, executor_response, original_user_question):
+        """
+        Interprets the result returned by the SQLExecutor using the LLM.
+        
+        executor_response structure:
+        {
+            "success": True/False,
+            "columns": [...],
+            "rows": [...],
+            "error": "..." or None
+        }
+        """
+
+        SYSTEM_PROMPT = """
+You are a Data Interpretation Assistant designed to translate raw database query
+results into clear, accurate, human-readable insights.
+
+===========================================================
+                   BACKGROUND CONTEXT
+===========================================================
+A user provides a natural-language question such as:
+"Get total posted hours per project" or
+"Show all resources who logged hours after actual date."
+
+The system converts the question into SQL using an LLM.
+That SQL query is executed by the Execution Engine, which queries a DuckDB
+database and returns structured output.
+
+Your job is to interpret that structured output and explain
+the meaning of the results clearly to the user.
+
+===========================================================
+         EXECUTION ENGINE RESPONSE STRUCTURE
+===========================================================
+You will receive this dictionary:
+
+{
+    "success": bool,
+    "columns": list[str] or None,
+    "rows": list[tuple] or None,
+    "error": str or None
+}
+
+• If success = True:
+    - columns = names of the output fields
+    - rows = actual data returned
+    - You must interpret the results.
+
+• If success = False:
+    - error = textual description of what failed.
+    - You must explain the error clearly, in simple terms.
+
+===========================================================
+                HOW TO INTERPRET RESULTS
+===========================================================
+When success=True:
+    • Provide a helpful explanation of what the user asked.
+    • Summarize what the returned rows represent.
+    • Highlight key values, totals, or patterns if relevant.
+    • Format tabular data clearly if needed.
+    • If many rows exist, summarize but show a small preview.
+    • NEVER invent facts not present in the columns/rows.
+
+When success=False:
+    • Explain the error in simple language.
+    • Suggest how the user may correct the query.
+    • Do NOT show internal stack traces unless helpful.
+
+===========================================================
+                 STYLE AND TONE GUIDELINES
+===========================================================
+• Clear, concise, human-readable.
+• Professional and neutral tone.
+• Do NOT output SQL.
+• Do NOT regenerate SQL.
+• Do NOT hallucinate column names or values.
+
+===========================================================
+
+===========================================================
+                STRICT ANTI-HALLUCINATION RULES
+===========================================================
+When presenting results:
+
+• You MUST use values EXACTLY as they appear in the executor output.
+• Do NOT modify text, spelling, spacing, punctuation, or numeric values.
+• Do NOT invent or fabricate any values.
+• Do NOT shorten, abbreviate, summarize, or infer missing values.
+• If a value is empty, display it exactly as empty.
+• If there are more rows than you can show, list only a few rows EXACTLY and
+  state that you are showing a preview.
+
+When creating tables:
+
+• Use only the rows that appear in the executor response.
+• Show them exactly as-is, without altering any characters.
+• Do not invent new rows or remove valid ones.
+
+These anti-hallucination rules MUST be followed every time.
+
+"""
+        user_payload = f"""
+The user originally asked: "{original_user_question}"
+
+Here is the raw executor response that you must interpret:
+
+{json.dumps(executor_response, indent=4)}
+"""
+
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "model": 'llama3.2:3b',
+            "messages": [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": user_payload}
+            ],
+            "temperature": 0.2,
+            "max_tokens": 400
+        }
+
+        # IMPORTANT → STREAMING MODE (your Ollama ALWAYS streams)
+        response = requests.post(
+            "http://localhost:11434/api/chat",
+            json=payload,
+            headers=headers,
+            stream=True
+        )
+        response.raise_for_status()
+
+        final_output = ""
+
+        # Parse NDJSON streaming chunks
+        for line in response.iter_lines():
+            if not line:
+                continue
+
+            try:
+                obj = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError:
+                continue
+
+            if "message" in obj and "content" in obj["message"]:
+                final_output += obj["message"]["content"]
+
+        return final_output.strip()
