@@ -39,7 +39,7 @@ def create_databases(session_id, csv_path):
     # 1. Create DuckDB
     conn = duckdb.connect(paths["duckdb"])
     conn.execute(f"""
-        CREATE TABLE IF NOT EXISTS info AS
+        CREATE TABLE IF NOT EXISTS sample_table AS
         SELECT * FROM read_csv_auto('{csv_path}')
     """)
 
@@ -89,7 +89,7 @@ def find_best_match(session_id, column_name, query):
     conn = get_duckdb(session_id)
 
     # fetch column values
-    result = conn.execute(f"SELECT \"{column_name}\" FROM info").fetchall()
+    result = conn.execute(f"SELECT \"{column_name}\" FROM sample_table").fetchall()
     values = [r[0] for r in result]
 
     # fuzzy match
