@@ -1,4 +1,4 @@
-from makeDB import create_session, create_databases, find_best_match
+from DB_Handler import create_session, create_databases, find_best_match
 
 # 1. Create session
 session_id = create_session()
