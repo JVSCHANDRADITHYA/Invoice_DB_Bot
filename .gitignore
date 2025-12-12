@@ -6,6 +6,7 @@
 *.docx
 *.json
 *.pyc
+*.pdf
 
 
 # ERP files (do not push)
