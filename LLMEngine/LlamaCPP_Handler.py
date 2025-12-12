@@ -153,22 +153,128 @@ class LlamaCPPHandler:
 
         return " ".join(final_lines).strip()
 
-    def interpret_response(self, executor_result, original_question):
+
+        
+    def interpret_response(self, executor_result, original_user_question):
         """
-        Turns SQL result table → natural language summary.
+        Interpret SQLExecutor results into a human-readable explanation
+        using the llama.cpp FastAPI backend (non-streaming).
         """
-        prompt = f"""
-You are an AI assistant. A SQL query was executed.
 
-User question:
-{original_question}
+        import json
 
-SQL Execution Result:
-Success: {executor_result["success"]}
-Columns: {executor_result.get("columns")}
-Rows (first 20): {executor_result.get("rows")[:20] if executor_result.get("rows") else []}
+        # ------------------------
+        # SAFE SERIALIZATION
+        # ------------------------
+        safe_columns = executor_result.get("columns") or []
+        safe_rows = executor_result.get("rows") or []
 
-Write a human-friendly explanation of this result.
+        # Convert tuples → lists for JSON safety
+        safe_rows_json = json.dumps([list(r) for r in safe_rows[:20]], ensure_ascii=False)
+        safe_columns_json = json.dumps(safe_columns, ensure_ascii=False)
+
+        # ------------------------
+        # SYSTEM PROMPT — DO NOT MODIFY
+        # ------------------------
+        SYSTEM_PROMPT = """
+You are a Data Interpretation Assistant designed to translate raw database query
+results into clear, accurate, human-readable insights.
+
+===========================================================
+                   BACKGROUND CONTEXT
+===========================================================
+A user provides a natural-language question such as:
+"Get total posted hours per project" or
+"Show all resources who logged hours after actual date."
+
+The system converts the question into SQL using an LLM.
+That SQL query is executed by the Execution Engine, which queries a DuckDB
+database and returns structured output.
+
+Your job is to interpret that structured output and explain
+the meaning of the results clearly to the user.
+
+===========================================================
+         EXECUTION ENGINE RESPONSE STRUCTURE
+===========================================================
+You will receive this dictionary:
+
+{
+    "success": bool,
+    "columns": list[str] or None,
+    "rows": list[tuple] or None,
+    "error": str or None
+}
+
+• If success = True:
+    - columns = names of the output fields
+    - rows = actual data returned
+    - You must interpret the results.
+
+• If success = False:
+    - error = textual description of what failed.
+    - You must explain the error clearly, in simple terms.
+
+===========================================================
+                HOW TO INTERPRET RESULTS
+===========================================================
+When success=True:
+    • Provide a helpful explanation of what the user asked.
+    • Summarize what the returned rows represent.
+    • Highlight key values, totals, or patterns if relevant.
+    • Format tabular data clearly if needed.
+    • If many rows exist, summarize but show a small preview.
+    • NEVER invent facts not present in the columns/rows.
+
+When success=False:
+    • Explain the error in simple language.
+    • Suggest how the user may correct the query.
+    • Do NOT show internal stack traces unless helpful.
+
+===========================================================
+                 STYLE AND TONE GUIDELINES
+===========================================================
+• Clear, concise, human-readable.
+• Professional and neutral tone.
+• Do NOT output SQL.
+• Do NOT regenerate SQL.
+• Do NOT hallucinate column names or values.
+
+===========================================================
+                STRICT ANTI-HALLUCINATION RULES
+===========================================================
+• You MUST use values EXACTLY as they appear in the executor output.
+• Do NOT modify text, spacing, punctuation, or numeric values.
+• Do NOT invent or infer values.
+• Only display actual rows exactly as returned.
+• If previewing, show rows EXACTLY without alterations.
 """
 
-        return self.generate(prompt, max_tokens=400)
+        # ------------------------
+        # USER PAYLOAD
+        # ------------------------
+        user_payload = f"""
+The user originally asked: "{original_user_question}"
+
+Here is the raw executor response that you must interpret:
+
+Success: {executor_result["success"]}
+Columns (JSON): {safe_columns_json}
+Rows (first 20, JSON): {safe_rows_json}
+"""
+
+        # ------------------------
+        # COMPOSE FINAL PROMPT (SYSTEM + USER)
+        # ------------------------
+        final_prompt = f"fOLLOW this sTRICTLY : {SYSTEM_PROMPT}\n\n{user_payload}\n\nWrite a human-friendly explanation IN A Paragraph INTEPRETING THE DATA YOU GOT"
+
+        # ------------------------
+        # CALL llama.cpp FastAPI backend
+        # ------------------------
+        result_text = self.generate(
+            final_prompt,
+            max_tokens=400,
+            temperature=0.2
+        )
+
+        return result_text.strip()

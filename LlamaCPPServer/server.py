@@ -13,8 +13,8 @@ llm = Llama(
 
 class GenerateRequest(BaseModel):
     prompt: str
-    max_tokens: int = 200
-    temperature: float = 0.1
+    max_tokens: int = 2000
+    temperature: float = 0.15
 
 @app.post("/generate")
 def generate_text(req: GenerateRequest):
