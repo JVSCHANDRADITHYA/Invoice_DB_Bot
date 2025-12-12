@@ -77,16 +77,40 @@ def run_sql_and_interpret(session_id, sql_query, original_user_question=None):
 
     return executor_result, df, interpretation
 
+import os
+import pythoncom
+from win32com import client
 
-def safe_convert_to_pdf(docx_path, pdf_path):
-    """Attempt to convert docx -> pdf using docx2pdf if available"""
-    if not DOCX2PDF_AVAILABLE:
-        return False, "docx2pdf not available on this system."
+def safe_convert_to_pdf(input_docx, output_pdf):
     try:
-        docx2pdf_convert(docx_path, pdf_path)
+        pythoncom.CoInitialize()
+
+        # Convert to absolute paths
+        input_path = os.path.abspath(input_docx)
+        output_path = os.path.abspath(output_pdf)
+
+        if not os.path.exists(input_path):
+            return False, f"File not found: {input_path}"
+
+        word = client.Dispatch("Word.Application")
+        word.visible = False
+
+        doc = word.Documents.Open(input_path)
+        doc.SaveAs(output_path, FileFormat=17)  # PDF = 17
+        doc.Close()
+        word.Quit()
+
         return True, None
+
     except Exception as e:
         return False, str(e)
+
+    finally:
+        try:
+            pythoncom.CoUninitialize()
+        except:
+            pass
+
 
 
 # -------------------------
@@ -198,127 +222,397 @@ if page == "Home / Upload & Query":
 # -------------------------
 # PAGE: Invoice Generator
 # -------------------------
+# elif page == "Invoice Generator":
+#     st.header("Invoice Generator")
+
+#     sessions = [d for d in os.listdir(BASE_DATA_PATH) if os.path.isdir(os.path.join(BASE_DATA_PATH, d))]
+#     sessions.sort(reverse=True)
+
+#     chosen_session = st.selectbox("Select session", ["-- new session --"] + sessions, key="session_select")
+
+#     if chosen_session == "-- new session --":
+#         st.info("Upload a CSV on Home page to create a session first.")
+#         st.stop()
+
+#     sid = chosen_session
+#     session_path = os.path.join(BASE_DATA_PATH, sid)
+
+#     # Load DB
+#     try:
+#         import duckdb
+#         conn = duckdb.connect(os.path.join(session_path, "duckdb.duckdb"))
+#         full_resources = [r[0] for r in conn.execute('SELECT DISTINCT "Resource Name" FROM sample_table').fetchall() if r[0]]
+#         conn.close()
+#     except Exception as e:
+#         st.error(f"DB error: {e}")
+#         st.stop()
+
+#     st.subheader("Select Resource")
+
+#     # initialize state
+#     if "selected_resource" not in st.session_state:
+#         st.session_state.selected_resource = "-- choose --"
+
+#     resource_choice = st.selectbox(
+#         "Select Resource",
+#         ["-- choose --"] + full_resources,
+#         key="selected_resource"
+#     )
+
+#     resource_fuzzy = st.text_input("Or type a fuzzy resource name", key="resource_fuzzy")
+
+#     # Resolve resource
+#     final_resource = None
+
+#     if st.session_state.selected_resource != "-- choose --":
+#         final_resource = st.session_state.selected_resource
+#     elif resource_fuzzy:
+#         from rapidfuzz import process, fuzz
+#         best = process.extractOne(resource_fuzzy, full_resources, scorer=fuzz.WRatio)
+#         if best:
+#             final_resource = best[0]
+#             st.success(f"Fuzzy matched Resource → {final_resource}  (score={best[1]})")
+
+#     if not final_resource:
+#         st.stop()
+
+
+#     # Filter projects for ONLY that resource
+#     try:
+#         conn = duckdb.connect(os.path.join(session_path, "duckdb.duckdb"))
+#         filtered_projects = [
+#             r[0] for r in conn.execute(f'''
+#                 SELECT DISTINCT "Project Name"
+#                 FROM sample_table
+#                 WHERE "Resource Name" = '{final_resource}'
+#             ''').fetchall() if r[0]
+#         ]
+#         conn.close()
+#     except Exception as e:
+#         st.error(f"Cannot retrieve projects for resource: {e}")
+#         st.stop()
+
+#     st.subheader("Select Project")
+
+#     project_choice = st.selectbox("Select Project", ["-- choose --"] + filtered_projects, key="project_select")
+#     project_fuzzy = st.text_input("Or type fuzzy project name", key="project_fuzzy")
+
+#     final_project = None
+#     if project_choice != "-- choose --":
+#         final_project = project_choice
+#     elif project_fuzzy:
+#         from rapidfuzz import process, fuzz
+#         best = process.extractOne(project_fuzzy, filtered_projects, scorer=fuzz.WRatio)
+#         if best:
+#             final_project = best[0]
+#             st.success(f"Fuzzy matched Project → {final_project}  (score={best[1]})")
+
+#     if not final_project:
+#         st.stop()
+
+#     # Get Project ID from DB (MISSING BEFORE!)
+#     conn = duckdb.connect(os.path.join(session_path, "duckdb.duckdb"))
+#     project_id = conn.execute(f'''
+#         SELECT DISTINCT "Project ID"
+#         FROM sample_table
+#         WHERE "Project Name" = '{final_project}'
+#     ''').fetchone()[0]
+#     conn.close()
+
+#     st.subheader("Financial Period")
+#     period_input = st.text_input("Enter Financial Period (e.g. November or 2025-11)", key="period_input")
+
+#     if st.button("Compute Financials", key="compute_financials"):
+#         invoicer = Invoicer(session_id=sid, base_path=BASE_DATA_PATH, invoice_path=INVOICES_PATH)
+
+#         try:
+#             period_conv = invoicer.convert_period(period_input)
+#         except Exception as e:
+#             st.error(f"Period error: {e}")
+#             st.stop()
+
+#         fin = invoicer.compute_financials(final_resource, final_project, period_conv)
+
+#         st.subheader("Preview Financials")
+#         st.json(fin)
+
+#         # Store in Streamlit state
+#         st.session_state["inv_fin"] = fin
+#         st.session_state["inv_period"] = period_conv
+#         st.session_state["inv_resource"] = final_resource
+#         st.session_state["inv_project"] = final_project
+#         st.session_state["inv_project_id"] = project_id
+
+#     # Generate invoice
+#     if "inv_fin" in st.session_state:
+#         if st.button("Generate Invoice", key="generate_invoice"):
+#             invoicer = Invoicer(session_id=sid, base_path=BASE_DATA_PATH, invoice_path=INVOICES_PATH)
+
+#             with st.spinner("Generating invoice..."):
+#                 out_docx, meta_json = invoicer.generate_invoice(
+#                     resource_name=st.session_state["inv_resource"],
+#                     project_name=st.session_state["inv_project"],
+#                     project_id=st.session_state["inv_project_id"],
+#                     financial_period=st.session_state["inv_period"],
+#                     financials=st.session_state["inv_fin"]
+#                 )
+
+#             st.success("Invoice generated.")
+#             st.write("DOCX file saved at:", out_docx)
+
+#             # Download DOCX
+#             with open(out_docx, "rb") as f:
+#                 st.download_button("Download DOCX", f.read(), file_name=os.path.basename(out_docx))
+
+#             # Convert to PDF
+#             pdf_path = out_docx.replace(".docx", ".pdf")
+#             converted, err = safe_convert_to_pdf(out_docx, pdf_path)
+
+#             if converted:
+#                 st.success("PDF generated.")
+#                 with open(pdf_path, "rb") as f:
+#                     pdf_data = f.read()
+#                     st.download_button("Download PDF", pdf_data, file_name=os.path.basename(pdf_path))
+#             else:
+#                 st.warning(f"PDF conversion failed: {err}")
+# -------------------------
+# PAGE: Invoice Generator
+# -------------------------
 elif page == "Invoice Generator":
+    import base64
+
     st.header("Invoice Generator")
 
-    # Choose session
-    sessions = [d for d in os.listdir(BASE_DATA_PATH) if os.path.isdir(os.path.join(BASE_DATA_PATH, d))]
+    # -------------------------
+    # Session Selection
+    # -------------------------
+    sessions = [
+        d for d in os.listdir(BASE_DATA_PATH)
+        if os.path.isdir(os.path.join(BASE_DATA_PATH, d))
+    ]
     sessions.sort(reverse=True)
-    chosen_session = st.selectbox("Select session", options=["-- new session --"] + sessions)
+
+    chosen_session = st.selectbox(
+        "Select session",
+        ["-- new session --"] + sessions,
+        key="session_select"
+    )
 
     if chosen_session == "-- new session --":
-        st.warning("Upload a CSV on Home page to create a session OR select an existing session.")
-    else:
-        sid = chosen_session
-        session_path = os.path.join(BASE_DATA_PATH, sid)
-        # Connect to DB and fetch distinct resource/project lists
+        st.info("Upload a CSV on Home page to create a session first.")
+        st.stop()
+
+    sid = chosen_session
+    session_path = os.path.join(BASE_DATA_PATH, sid)
+
+    # -------------------------
+    # Load DB + Resources
+    # -------------------------
+    try:
+        import duckdb
+        conn = duckdb.connect(os.path.abspath(os.path.join(session_path, "duckdb.duckdb")))
+        full_resources = [
+            r[0]
+            for r in conn.execute(
+                'SELECT DISTINCT "Resource Name" FROM sample_table'
+            ).fetchall()
+            if r[0]
+        ]
+        conn.close()
+    except Exception as e:
+        st.error(f"DB error: {e}")
+        st.stop()
+
+    st.subheader("Select Resource")
+
+    resource_choice = st.selectbox(
+        "Select Resource",
+        ["-- choose --"] + full_resources,
+        key="resource_choice"
+    )
+
+    resource_fuzzy = st.text_input("Or type a fuzzy resource name", key="resource_fuzzy")
+
+    # -------------------------
+    # Resolve Resource
+    # -------------------------
+    final_resource = None
+    if resource_choice != "-- choose --":
+        final_resource = resource_choice
+    elif resource_fuzzy:
+        from rapidfuzz import process, fuzz
+
+        best = process.extractOne(resource_fuzzy, full_resources, scorer=fuzz.WRatio)
+        if best:
+            final_resource = best[0]
+            st.success(f"Fuzzy matched Resource → {final_resource} (score={best[1]})")
+
+    if not final_resource:
+        st.stop()
+
+    # -------------------------
+    # Load Projects associated with selected resource
+    # -------------------------
+    try:
+        conn = duckdb.connect(os.path.abspath(os.path.join(session_path, "duckdb.duckdb")))
+        filtered_projects = [
+            r[0]
+            for r in conn.execute(
+                f'''
+                SELECT DISTINCT "Project Name"
+                FROM sample_table
+                WHERE "Resource Name" = '{final_resource}'
+                '''
+            ).fetchall()
+            if r[0]
+        ]
+        conn.close()
+    except Exception as e:
+        st.error(f"Cannot retrieve projects for resource: {e}")
+        st.stop()
+
+    st.subheader("Select Project")
+
+    project_choice = st.selectbox(
+        "Select Project",
+        ["-- choose --"] + filtered_projects,
+        key="project_choice"
+    )
+
+    project_fuzzy = st.text_input("Or type fuzzy project name", key="project_fuzzy")
+
+    final_project = None
+    if project_choice != "-- choose --":
+        final_project = project_choice
+    elif project_fuzzy:
+        from rapidfuzz import process, fuzz
+
+        best = process.extractOne(project_fuzzy, filtered_projects, scorer=fuzz.WRatio)
+        if best:
+            final_project = best[0]
+            st.success(f"Fuzzy matched Project → {final_project} (score={best[1]})")
+
+    if not final_project:
+        st.stop()
+
+    # -------------------------
+    # Retrieve Project ID
+    # -------------------------
+    conn = duckdb.connect(os.path.abspath(os.path.join(session_path, "duckdb.duckdb")))
+    project_id = conn.execute(
+        f'''
+        SELECT DISTINCT "Project ID"
+        FROM sample_table
+        WHERE "Project Name" = '{final_project}'
+        '''
+    ).fetchone()[0]
+    conn.close()
+
+    # -------------------------
+    # Financial Period
+    # -------------------------
+    st.subheader("Financial Period")
+    period_input = st.text_input(
+        "Enter Financial Period (e.g. November or 2025-11)",
+        key="period_input"
+    )
+
+    # -------------------------
+    # Compute Financials
+    # -------------------------
+    if st.button("Compute Financials", key="compute_financials"):
+        invoicer = Invoicer(session_id=sid, base_path=BASE_DATA_PATH, invoice_path=INVOICES_PATH)
+
         try:
-            import duckdb
-            conn = duckdb.connect(os.path.join(session_path, "duckdb.duckdb"))
-            resources = [r[0] for r in conn.execute('SELECT DISTINCT "Resource Name" FROM sample_table').fetchall() if r[0] is not None]
-            projects = [r[0] for r in conn.execute('SELECT DISTINCT "Project Name" FROM sample_table').fetchall() if r[0] is not None]
-            conn.close()
+            period_conv = invoicer.convert_period(period_input)
         except Exception as e:
-            st.error(f"Failed to read DB for session {sid}: {e}")
-            resources, projects = [], []
+            st.error(f"Period error: {e}")
+            st.stop()
 
-        col1, col2 = st.columns(2)
-        with col1:
-            resource_choice = st.selectbox("Select Resource (exact)", options=["-- pick or fuzzy input --"] + resources)
-            resource_fuzzy = st.text_input("Or type resource name (fuzzy)")
+        fin = invoicer.compute_financials(final_resource, final_project, period_conv)
 
-        with col2:
-            project_choice = st.selectbox("Select Project (exact)", options=["-- pick or fuzzy input --"] + projects)
-            project_fuzzy = st.text_input("Or type project name (fuzzy)")
+        st.subheader("Preview Financials")
+        st.json(fin)
 
-        # Decide final selections (prefer exact pick)
-        final_resource = None
-        final_project = None
+        # Save state
+        st.session_state["inv_fin"] = fin
+        st.session_state["inv_period"] = period_conv
+        st.session_state["inv_resource"] = final_resource
+        st.session_state["inv_project"] = final_project
+        st.session_state["inv_project_id"] = project_id
 
-        if resource_choice and resource_choice != "-- pick or fuzzy input --":
-            final_resource = resource_choice
-        elif resource_fuzzy:
-            # fuzzy match locally (simple top-1)
-            from rapidfuzz import process, fuzz
-            candidates = [r for r in resources]
-            if not candidates:
-                st.error("No resource values available in DB to fuzzy-match.")
-            else:
-                best = process.extractOne(resource_fuzzy, candidates, scorer=fuzz.WRatio)
-                final_resource = best[0]
-                st.info(f"Fuzzy matched Resource: {final_resource} (score={best[1]})")
+    # -------------------------
+    # Generate Invoice
+    # -------------------------
+    if "inv_fin" in st.session_state:
+        if st.button("Generate Invoice", key="generate_invoice"):
+            invoicer = Invoicer(
+                session_id=sid,
+                base_path=BASE_DATA_PATH,
+                invoice_path=INVOICES_PATH
+            )
 
-        if project_choice and project_choice != "-- pick or fuzzy input --":
-            final_project = project_choice
-        elif project_fuzzy:
-            from rapidfuzz import process, fuzz
-            candidates = [p for p in projects]
-            if not candidates:
-                st.error("No project values available in DB to fuzzy-match.")
-            else:
-                best = process.extractOne(project_fuzzy, candidates, scorer=fuzz.WRatio)
-                final_project = best[0]
-                st.info(f"Fuzzy matched Project: {final_project} (score={best[1]})")
+            with st.spinner("Generating invoice..."):
+                out_docx, meta_json = invoicer.generate_invoice(
+                    resource_name=st.session_state["inv_resource"],
+                    project_name=st.session_state["inv_project"],
+                    project_id=st.session_state["inv_project_id"],
+                    financial_period=st.session_state["inv_period"],
+                    financials=st.session_state["inv_fin"]
+                )
 
-        st.markdown("---")
-        period_input = st.text_input("Enter Financial Period (month name or YYYY-MM). Example: 'November' or '2025-11'")
+            st.success("Invoice generated.")
+            st.write("DOCX file saved at:", out_docx)
 
-        if st.button("Compute & Preview Invoice"):
-            if not final_resource or not final_project:
-                st.error("Please choose or fuzzy-find both resource and project.")
-            else:
-                invoicer = Invoicer(session_id=sid, base_path=BASE_DATA_PATH, invoice_path=INVOICES_PATH)
-                try:
-                    period_conv = invoicer.convert_period(period_input)
-                except Exception as e:
-                    st.error(f"Failed to interpret period: {e}")
-                    period_conv = None
+            # DOCX Download
+            with open(out_docx, "rb") as f:
+                st.download_button(
+                    "Download DOCX",
+                    f.read(),
+                    file_name=os.path.basename(out_docx)
+                )
 
-                if period_conv:
-                    fin = invoicer.compute_financials(final_resource, final_project, period_conv)
-                    st.subheader("Computed Financials")
-                    st.write(fin)
-                    st.info("If results look good, click Generate Invoice to create DOCX/JSON (PDF conversion attempted if available).")
+            # -------------------------
+            # Convert to PDF
+            # -------------------------
+            pdf_path = out_docx.replace(".docx", ".pdf")
+            converted, err = safe_convert_to_pdf(out_docx, pdf_path)
 
-                    if st.button("Generate Invoice"):
-                        with st.spinner("Generating invoice..."):
-                            out_docx, meta_json = invoicer.generate_invoice(
-                                resource_name=final_resource,
-                                project_name=final_project,
-                                project_id=final_project,  # if you have Project ID, replace this
-                                financial_period=period_conv,
-                                financials=fin
-                            )
+            if not converted:
+                st.warning(f"PDF conversion failed: {err}")
+                st.stop()
 
-                            st.success("Invoice generated.")
-                            st.write("DOCX:", out_docx)
-                            st.write("JSON metadata:", meta_json)
+            st.success("PDF generated!")
 
-                            # Attempt PDF conversion
-                            pdf_path = out_docx.replace(".docx", ".pdf")
-                            converted, err = safe_convert_to_pdf(out_docx, pdf_path)
-                            if converted:
-                                st.success("PDF generated.")
-                                # Provide download buttons
-                                with open(pdf_path, "rb") as f:
-                                    st.download_button("Download PDF", f.read(), file_name=os.path.basename(pdf_path))
-                                # Attempt to preview PDF inline
-                                try:
-                                    with open(pdf_path, "rb") as f:
-                                        base64_pdf = f.read()
-                                    st.markdown("#### PDF Preview")
-                                    st.write("If the PDF preview does not show, download the PDF using the button above.")
-                                    st.components.v1.html(
-                                        f'<iframe src="data:application/pdf;base64,{base64_pdf.encode("base64")}" width="100%" height="600px"></iframe>',
-                                        height=600,
-                                    )
-                                except Exception:
-                                    st.info("PDF preview not supported in this environment.")
-                            else:
-                                st.warning(f"PDF not created: {err}")
-                                # Offer DOCX download
-                                with open(out_docx, "rb") as f:
-                                    st.download_button("Download DOCX", f.read(), file_name=os.path.basename(out_docx))
+            with open(pdf_path, "rb") as f:
+                pdf_data = f.read()
+
+            st.download_button(
+                "Download PDF",
+                pdf_data,
+                file_name=os.path.basename(pdf_path)
+            )
+
+            # -------------------------
+            # PDF Preview
+            # -------------------------
+            try:
+                base64_pdf = base64.b64encode(pdf_data).decode("utf-8")
+                st.markdown("### Invoice Preview")
+
+                pdf_display = f"""
+                    <iframe
+                        src="data:application/pdf;base64,{base64_pdf}"
+                        width="100%" height="700px">
+                    </iframe>
+                """
+
+                st.components.v1.html(pdf_display, height=1200 , width=1200)
+
+            except Exception as e:
+                st.error(f"PDF preview failed: {e}")
+
+            
 
 # -------------------------
 # PAGE: Sessions (list existing)
