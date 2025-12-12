@@ -116,7 +116,7 @@ def safe_convert_to_pdf(input_docx, output_pdf):
 # -------------------------
 # UI: Navigation
 # -------------------------
-st.title("Invoice & Query Manager")
+st.title("Invoice & Query Manager (LLAMA CPP Backend)")
 page = st.sidebar.selectbox("Select Page", ["Home / Upload & Query", "Invoice Generator", "Sessions"])
 
 # -------------------------
