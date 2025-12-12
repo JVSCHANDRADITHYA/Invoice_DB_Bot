@@ -114,7 +114,7 @@ class Invoicer:
             ANY_VALUE("Resource Rate") AS rate
         FROM sample_table
         WHERE "Resource Name" = '{resource_name}'
-          AND "Project ID" = '{project_name}'
+          AND "Project Name" = '{project_name}'
           AND "Financial Period (Posted Date)" = '{financial_period}';
         """
         
