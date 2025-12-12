@@ -8,6 +8,7 @@
 *.pyc
 *.pdf
 *.gguf
+*.wal
 
 
 # ERP files (do not push)
