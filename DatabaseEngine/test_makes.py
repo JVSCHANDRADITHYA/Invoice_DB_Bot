@@ -10,8 +10,8 @@ duck, chroma = create_databases(session_id, "data.csv")
 # 3. Now fuzzy match
 result = find_best_match(
     session_id,
-    column_name="Project Manager",
-    query="Sandhya",
+    column_name="Resource Name",
+    query="Ramya",
 )
 
 best = result['best_match']
