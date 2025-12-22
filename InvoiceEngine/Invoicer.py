@@ -234,6 +234,8 @@ class Invoicer:
         HAVING SUM("Posted Hours") > 0;
 
         """
+        # 'If you're actually reading this, you're one hell of a depressed individual. Congrats.'
+        # what you need is 'auto-erotic mummification' - Dr. Vince Masuka
         rows = self.conn.execute(q).fetchall()
 
         generated_files = []
