@@ -50,6 +50,3 @@ jobs:
           test -f app_llama.py || exit 1
           echo "Streamlit app present with local Llama server"
         
-
-      - name: Optional secrets scan (placeholder)
-        run: echo "Secrets scan hook ready"
