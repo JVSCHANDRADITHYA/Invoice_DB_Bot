@@ -197,4 +197,62 @@ class Invoicer:
         template.save(output_path)
 
         return output_path, json_path
+    
+    def generate_all_invoices(self, resource_name, project_name, financial_period):
+        """Generate invoices for all matching projects for a resource"""
+        # Get project ID
+        q = f"""
+        SELECT DISTINCT "Project ID"
+        FROM sample_table
+        WHERE "Resource Name" = '{resource_name};'
+        """
+        rows = self.conn.execute(q).fetchall()
+        project_ids = [r[0] for r in rows]
 
+        generated_files = []
+
+        for pid in project_ids:
+            financials = self.compute_financials(resource_name, project_name, financial_period)
+            invoice_path, json_path = self.generate_invoice(
+                resource_name, project_name, pid,
+                financial_period, financials
+            )
+            generated_files.append({
+                "project_id": pid,
+                "invoice_path": invoice_path,
+                "json_path": json_path
+            })
+        return generated_files
+    
+    def all_resources_invoice(self, financial_period):
+        """Generate invoices for all resources in the database for a given period"""
+        q = f"""
+        SELECT "Resource Name", "Project Name", "Project ID" AS total_hours
+        FROM sample_table
+        WHERE "Financial Period (Posted Date)" = '2025-11'
+        GROUP BY "Resource Name", "Project Name", "Project ID"
+        HAVING SUM("Posted Hours") > 0;
+
+        """
+        rows = self.conn.execute(q).fetchall()
+
+        generated_files = []
+
+        for row in rows:
+            resource_name, project_name, project_id= row
+            financials = self.compute_financials(resource_name, project_name, financial_period)
+            invoice_path, json_path = self.generate_invoice(
+                resource_name, project_name, project_id,
+                financial_period, financials
+            )
+            generated_files.append({
+                "resource_name": resource_name,
+                "project_id": project_id,
+                "invoice_path": invoice_path,
+                "json_path": json_path
+            })
+        return generated_files
+    
+# example usage:
+# invoicer = Invoicer(session_id="abc123")
+# matches = invoicer.match_resource("John Doe")
