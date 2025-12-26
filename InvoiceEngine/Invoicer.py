@@ -201,8 +201,6 @@ class Invoicer:
         template.save(output_path)
 
         return output_path, json_path
-    @overload
-    def generate_invoice(self, resource_name, project_name, project_id, finacial_list)
     def generate_all_invoices(self, resource_name, project_name, financial_period):
         """Generate invoices for all matching projects for a resource"""
         # Get project ID
