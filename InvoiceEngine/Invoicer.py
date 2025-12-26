@@ -2,6 +2,7 @@ import os
 import json
 import hashlib
 import datetime
+from typing import overload
 import duckdb
 
 from rapidfuzz import process, fuzz
@@ -138,13 +139,16 @@ class Invoicer:
     #  6) GENERATE INVOICE USING DOCXTPL
     # -------------------------------------------------------------
     def generate_invoice(self, resource_name, project_name, project_id,
-                         financial_period, financials):
+                         financial_period, financials, path=None):
 
         today = datetime.date.today().strftime("%d-%b-%Y")
-
-        folder_name = f"{resource_name}_{project_id}".replace(" ", "_")
-        folder_path = os.path.join(self.invoice_path, folder_name)
-        os.makedirs(folder_path, exist_ok=True)
+        if path is not None:
+            folder_path = path
+            os.makedirs(folder_path, exist_ok=True)
+        else:
+            folder_name = f"{resource_name}_{project_id}".replace(" ", "_")
+            folder_path = os.path.join(self.invoice_path, folder_name)
+            os.makedirs(folder_path, exist_ok=True)
 
         context = {
             "irn": self.make_hash(resource_name + project_name),
@@ -197,7 +201,8 @@ class Invoicer:
         template.save(output_path)
 
         return output_path, json_path
-    
+    @overload
+    def generate_invoice(self, resource_name, project_name, project_id, finacial_list)
     def generate_all_invoices(self, resource_name, project_name, financial_period):
         """Generate invoices for all matching projects for a resource"""
         # Get project ID
@@ -255,6 +260,66 @@ class Invoicer:
             })
         return generated_files
     
+    def project_invoice_with_all_resources(self, project_id, financial_period):
+        """
+        Generate ONE invoice for a project.
+        Invoice contains multiple rows (one per resource).
+        """
+
+        # 1. Fetch all resource-level financials for the project
+        q = f"""
+        SELECT
+            "Resource Name",
+            SUM("Posted Hours") AS hours,
+            AVG("Resource Rate") AS rate,
+            SUM("Posted Hours" * "Resource Rate") AS amount
+        FROM sample_table
+        WHERE "Project ID" = '{project_id}'
+        AND "Financial Period (Posted Date)" = '{financial_period}'
+        GROUP BY "Resource Name"
+        HAVING SUM("Posted Hours") > 0;
+        """
+
+        rows = self.conn.execute(q).fetchall()
+
+        if not rows:
+            raise ValueError("No billable data for this project & period")
+
+        # 2. Get project name once
+        project_name = self.conn.execute(
+            f"""
+            SELECT DISTINCT "Project Name"
+            FROM sample_table
+            WHERE "Project ID" = '{project_id}'
+            """
+        ).fetchone()[0]
+        
+        resource_names, hours_list, rates_list, amounts_list = zip(*rows)
+        
+        resource_names = '\n'.join(resource_names)
+        financials = {
+            "hours": sum(hours_list),
+            "rate": 0,  # Not applicable for multi-resource invoice
+            "amount": sum(amounts_list)
+        }
+        
+        # generate invoice
+        path, json_path = self.generate_invoice(
+            resource_name=resource_names,
+            project_name=project_name,
+            project_id=project_id,
+            financial_period=financial_period,
+            financials=financials,
+            path=f'project_invoices/{project_id}'
+
+        )
+
+
+#usage:
+inv = Invoicer(session_id="master")
+# use project_invoice_with_all_resources
+invoices = inv.project_invoice_with_all_resources(project_id="91HYFY25_RASESI_NOA", financial_period="2025-11")
+
 # example usage:
 # invoicer = Invoicer(session_id="abc123")
 # matches = invoicer.match_resource("John Doe")
