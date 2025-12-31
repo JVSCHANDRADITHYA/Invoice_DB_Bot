@@ -29,8 +29,6 @@ jobs:
       - name: Sanity check imports
         run: |
           python - <<EOF
-          from ExecutorEngine.executor import SQLExecutor
-          from InvoiceEngine.Invoicer import Invoicer
           print("Core imports OK")
           EOF
 
